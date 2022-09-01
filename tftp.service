@@ -1,0 +1,105 @@
+#!/bin/sh
+
+### BEGIN INIT INFO
+# Provides:             tftpd-hpa
+# Required-Start:       $local_fs $remote_fs $syslog $network
+# Required-Stop:        $local_fs $remote_fs $syslog $network
+# Default-Start:        2 3 4 5
+# Default-Stop:         0 1 6
+# Short-Description:    HPA's tftp server
+# Description:          Trivial File Transfer Protocol (TFTP) is a file transfer
+#                       protocol, mainly to serve boot images over the network
+#                       to other machines (PXE).
+### END INIT INFO
+#set -x
+PATH="/sbin:/bin:/usr/sbin:/usr/bin"
+DAEMON="/usr/sbin/in.tftpd"
+
+test -x "$DAEMON" || exit 0
+
+NAME="in.tftpd"
+DESC="HPA's tftpd"
+PIDFILE="/var/run/tftpd-hpa.pid"
+DEFAULTS="/etc/default/tftpd-hpa"
+
+set -e
+
+[ -r "$DEFAULTS" ] && . "$DEFAULTS"
+
+. /etc/init.d/functions
+
+
+if [ "$(echo $TFTP_DIRECTORY | wc -w)" -ge 2 ] && \
+           echo $TFTP_OPTIONS | grep -qs secure
+then
+                echo
+                echo "When --secure is specified, exactly one directory can be specified."
+                echo "Please correct your $DEFAULTS."
+                exit 1
+fi
+
+# Ensure server directories exist
+for d in $TFTP_DIRECTORY; do
+                if [ ! -d "$d" ]; then
+        echo "$d missing, aborting."
+        exit 1
+    fi
+done
+
+case "$1" in
+  start)
+        echo " Starting tftp: "
+        $DAEMON --listen --user $TFTP_USERNAME --address "$TFTP_ADDRESS" $TFTP_OPTIONS "$TFTP_DIRECTORY"
+        RETVAL=$?
+        if [ $RETVAL -eq 0 ]; then
+           touch /var/lock/subsys/tftp
+           pidof "$DAEMON" > "$PIDFILE"
+           echo -en "\033[1A"
+           success
+           echo -en "\033[1B"
+        else
+           echo -en "\033[1A"
+           failure
+           echo -en "\033[1B"
+        fi
+        ;;
+  stop)
+        if test "x`pidof $DAEMON`" != x; then
+            echo " Shutting down tftp: "
+            kill "$(cat $PIDFILE)"
+        else
+            echo "tftp is not running."
+            exit 0
+        fi
+
+        RETVAL=$?
+        if [ $RETVAL -eq 0 ]; then
+           rm -f /var/lock/subsys/tftp $PIDFILE
+           echo -en "\033[1A"
+           success
+           echo -en "\033[1B"
+        else
+           echo -en "\033[1A"
+           failure
+           echo -en "\033[1B"
+        fi
+        ;;
+  status)
+        if test "x`pidof $DAEMON`" != x; then
+            echo " tftp is running: "
+            exit 0
+        else
+            echo "tftp is not running."
+            exit 1
+        fi
+        ;;
+  restart|reload)
+        $0 stop
+        $0 start
+        RETVAL=$?
+        ;;
+  *)
+        echo "Usage: $0 {start|stop|restart|reload|status}" >&2
+        exit 3
+        ;;
+esac
